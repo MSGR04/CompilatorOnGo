@@ -1,7 +1,7 @@
 package main
 
 import (
-	"CompilatorOnGo/lab01"
+	"CompilatorOnGo/Core/Lexer"
 	"bufio"
 	"fmt"
 	"math/rand"
@@ -11,9 +11,9 @@ import (
 )
 
 func main() {
-	codeExample := "var x = 123; print x + 5;"
+	codeExample := "var x; print x + 5;"
 
-	lexer := lab01.NewLexer(codeExample)
+	lexer := Lexer.NewLexer(codeExample)
 	tokens, err := lexer.Tokenize()
 	if err != nil {
 		fmt.Println("Lexer error:", err)
