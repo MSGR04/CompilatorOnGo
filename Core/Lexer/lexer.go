@@ -30,6 +30,8 @@ var keywords = map[string]TokenType{
 	"if":    IF,
 	"else":  ELSE,
 	"while": WHILE,
+	"true":  BOOLEAN,
+	"false": BOOLEAN,
 }
 
 var operators = map[string]TokenType{
@@ -79,6 +81,15 @@ func (l *Lexer) Tokenize() ([]Token, error) {
 			continue
 		}
 
+		if current == '"' {
+			tok, err := l.readString()
+			if err != nil {
+				return nil, err
+			}
+			tokens = append(tokens, tok)
+			continue
+		}
+
 		if unicode.IsLetter(current) {
 			tokens = append(tokens, l.readWord())
 			continue
@@ -105,8 +116,41 @@ func (l *Lexer) readNumber() Token {
 		l.next()
 	}
 
+	if l.peek() == '.' {
+		l.next()
+		for unicode.IsDigit(l.peek()) {
+			l.next()
+		}
+	}
+
 	text := string(l.input[startPos:l.pos])
 	return NewToken(NUMBER, text, startPos, startLine, startCol)
+}
+
+func (l *Lexer) readString() (Token, error) {
+	startPos := l.pos
+	startLine := l.line
+	startCol := l.column
+
+	l.next()
+
+	for {
+		ch := l.peek()
+		if ch == 0 {
+			return Token{}, fmt.Errorf("[Lexer Error] Unterminated string at Line %d, Column %d", startLine, startCol)
+		}
+
+		if ch == '"' {
+			break
+		}
+
+		l.next()
+	}
+
+	value := string(l.input[startPos+1 : l.pos])
+	l.next()
+
+	return NewToken(STRING, value, startPos, startLine, startCol), nil
 }
 
 func (l *Lexer) readWord() Token {

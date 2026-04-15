@@ -354,6 +354,10 @@ func (p *Parser) parsePrimary() (Ast.Expression, error) {
 		return &Ast.StringExpression{Value: p.previous().Value}, nil
 	}
 
+	if p.match(Lexer.BOOLEAN) {
+		return &Ast.BooleanExpression{Value: p.previous().Value == "true"}, nil
+	}
+
 	if p.match(Lexer.ID) {
 		return &Ast.VariableExpression{Name: p.previous().Value}, nil
 	}

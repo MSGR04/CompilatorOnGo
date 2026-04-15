@@ -6,6 +6,7 @@ const (
 	NUMBER TokenType = iota
 	ID
 	STRING
+	BOOLEAN
 	VAR
 
 	PRINT

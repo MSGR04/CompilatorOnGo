@@ -6,6 +6,7 @@ import (
 	"CompilatorOnGo/Core/Parser/Ast"
 )
 
+
 type AstPrinter struct{}
 
 func (p *AstPrinter) Print(statements []Ast.Statement) {

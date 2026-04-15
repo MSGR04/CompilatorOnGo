@@ -3,6 +3,7 @@ package Semantic
 type variableInfo struct {
 	initialized bool
 	used        bool
+	valueType   ValueType
 }
 
 type SemanticEnvironment struct {
@@ -17,34 +18,43 @@ func NewSemanticEnvironment(parent *SemanticEnvironment) *SemanticEnvironment {
 	}
 }
 
-func (e *SemanticEnvironment) DefineVariable(name string, initialized bool) bool {
+func (e *SemanticEnvironment) DefineVariable(name string, valueType ValueType, initialized bool) bool {
 	if _, ok := e.vars[name]; ok {
 		return false
 	}
-	e.vars[name] = &variableInfo{initialized: initialized, used: false}
+
+	e.vars[name] = &variableInfo{
+		initialized: initialized,
+		used:        false,
+		valueType:   valueType,
+	}
+
 	return true
 }
 
-func (e *SemanticEnvironment) UseVariable(name string) (defined, initialized bool) {
+func (e *SemanticEnvironment) UseVariable(name string) (*variableInfo, bool) {
 	if info, ok := e.vars[name]; ok {
 		info.used = true
-		return true, info.initialized
+		return info, true
 	}
+
 	if e.parent != nil {
 		return e.parent.UseVariable(name)
 	}
-	return false, false
+
+	return nil, false
 }
 
-func (e *SemanticEnvironment) AssignVariable(name string) bool {
+func (e *SemanticEnvironment) ResolveVariable(name string) (*variableInfo, bool) {
 	if info, ok := e.vars[name]; ok {
-		info.initialized = true
-		return true
+		return info, true
 	}
+
 	if e.parent != nil {
-		return e.parent.AssignVariable(name)
+		return e.parent.ResolveVariable(name)
 	}
-	return false
+
+	return nil, false
 }
 
 func (e *SemanticEnvironment) CollectUnused() []string {
@@ -54,5 +64,6 @@ func (e *SemanticEnvironment) CollectUnused() []string {
 			unused = append(unused, name)
 		}
 	}
+
 	return unused
 }

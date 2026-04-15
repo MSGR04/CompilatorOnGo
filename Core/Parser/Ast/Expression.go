@@ -18,6 +18,12 @@ type StringExpression struct {
 
 func (*StringExpression) exprNode() {}
 
+type BooleanExpression struct {
+	Value bool
+}
+
+func (*BooleanExpression) exprNode() {}
+
 type VariableExpression struct {
 	Name string
 }
