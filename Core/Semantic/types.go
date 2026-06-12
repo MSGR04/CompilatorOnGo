@@ -7,6 +7,7 @@ const (
 	NumberType
 	StringType
 	BooleanType
+	FunctionType
 )
 
 func (t ValueType) String() string {
@@ -17,6 +18,8 @@ func (t ValueType) String() string {
 		return "String"
 	case BooleanType:
 		return "Boolean"
+	case FunctionType:
+		return "Function"
 	default:
 		return "Unknown"
 	}

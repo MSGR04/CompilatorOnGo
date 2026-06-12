@@ -51,3 +51,10 @@ type AssignExpression struct {
 }
 
 func (*AssignExpression) exprNode() {}
+
+type CallExpression struct {
+	Callee    Expression
+	Arguments []Expression
+}
+
+func (*CallExpression) exprNode() {}

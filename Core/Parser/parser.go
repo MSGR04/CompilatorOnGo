@@ -20,20 +20,67 @@ func New(tokens []Lexer.Token) *Parser {
 func (p *Parser) Parse() ([]Ast.Statement, error) {
 	statements := make([]Ast.Statement, 0)
 	for !p.isAtEnd() {
-		st, err := p.parseDeclaration()
+		statement, err := p.parseDeclaration()
 		if err != nil {
 			return nil, err
 		}
-		statements = append(statements, st)
+		statements = append(statements, statement)
 	}
 	return statements, nil
 }
 
 func (p *Parser) parseDeclaration() (Ast.Statement, error) {
+	if p.match(Lexer.FUNC) {
+		return p.parseFunctionDeclaration()
+	}
 	if p.match(Lexer.VAR) {
 		return p.parseVarDeclaration()
 	}
 	return p.parseStatement()
+}
+
+func (p *Parser) parseFunctionDeclaration() (Ast.Statement, error) {
+	name, err := p.consume(Lexer.ID, "Expected function name.")
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := p.consume(Lexer.LPAREN, "Expected '(' after function name."); err != nil {
+		return nil, err
+	}
+
+	params := make([]string, 0)
+	if !p.check(Lexer.RPAREN) {
+		for {
+			param, err := p.consume(Lexer.ID, "Expected parameter name.")
+			if err != nil {
+				return nil, err
+			}
+			params = append(params, param.Value)
+
+			if !p.match(Lexer.COMMA) {
+				break
+			}
+		}
+	}
+
+	if _, err := p.consume(Lexer.RPAREN, "Expected ')' after function parameters."); err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(Lexer.LBRACE, "Expected '{' before function body."); err != nil {
+		return nil, err
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Ast.FunctionStatement{
+		Name:   name.Value,
+		Params: params,
+		Body:   body,
+	}, nil
 }
 
 func (p *Parser) parseStatement() (Ast.Statement, error) {
@@ -46,6 +93,9 @@ func (p *Parser) parseStatement() (Ast.Statement, error) {
 	if p.match(Lexer.PRINT) {
 		return p.parsePrintStatement()
 	}
+	if p.match(Lexer.RETURN) {
+		return p.parseReturnStatement()
+	}
 	if p.match(Lexer.LBRACE) {
 		block, err := p.parseBlock()
 		if err != nil {
@@ -57,12 +107,12 @@ func (p *Parser) parseStatement() (Ast.Statement, error) {
 }
 
 func (p *Parser) parseVarDeclaration() (Ast.Statement, error) {
-	name, err := p.consume(Lexer.ID, "Ожидается имя переменной.")
+	name, err := p.consume(Lexer.ID, "Expected variable name.")
 	if err != nil {
 		return nil, err
 	}
 
-	var initializer Ast.Expression = nil
+	var initializer Ast.Expression
 	if p.match(Lexer.EQ) {
 		initializer, err = p.parseExpression()
 		if err != nil {
@@ -70,18 +120,15 @@ func (p *Parser) parseVarDeclaration() (Ast.Statement, error) {
 		}
 	}
 
-	if _, err := p.consume(Lexer.SEMICOLON, "Ожидается ';' после объявления переменной."); err != nil {
+	if _, err := p.consume(Lexer.SEMICOLON, "Expected ';' after variable declaration."); err != nil {
 		return nil, err
 	}
 
-	return &Ast.VarStatement{
-		Name:        name.Value,
-		Initializer: initializer,
-	}, nil
+	return &Ast.VarStatement{Name: name.Value, Initializer: initializer}, nil
 }
 
 func (p *Parser) parseIfStatement() (Ast.Statement, error) {
-	if _, err := p.consume(Lexer.LPAREN, "Ожидается '(' после 'if'."); err != nil {
+	if _, err := p.consume(Lexer.LPAREN, "Expected '(' after 'if'."); err != nil {
 		return nil, err
 	}
 
@@ -90,7 +137,7 @@ func (p *Parser) parseIfStatement() (Ast.Statement, error) {
 		return nil, err
 	}
 
-	if _, err := p.consume(Lexer.RPAREN, "Ожидается ')' после условия 'if'."); err != nil {
+	if _, err := p.consume(Lexer.RPAREN, "Expected ')' after if condition."); err != nil {
 		return nil, err
 	}
 
@@ -99,7 +146,7 @@ func (p *Parser) parseIfStatement() (Ast.Statement, error) {
 		return nil, err
 	}
 
-	var elseBranch Ast.Statement = nil
+	var elseBranch Ast.Statement
 	if p.match(Lexer.ELSE) {
 		elseBranch, err = p.parseStatement()
 		if err != nil {
@@ -115,7 +162,7 @@ func (p *Parser) parseIfStatement() (Ast.Statement, error) {
 }
 
 func (p *Parser) parseWhileStatement() (Ast.Statement, error) {
-	if _, err := p.consume(Lexer.LPAREN, "Ожидается '(' после 'while'."); err != nil {
+	if _, err := p.consume(Lexer.LPAREN, "Expected '(' after 'while'."); err != nil {
 		return nil, err
 	}
 
@@ -124,7 +171,7 @@ func (p *Parser) parseWhileStatement() (Ast.Statement, error) {
 		return nil, err
 	}
 
-	if _, err := p.consume(Lexer.RPAREN, "Ожидается ')' после условия 'while'."); err != nil {
+	if _, err := p.consume(Lexer.RPAREN, "Expected ')' after while condition."); err != nil {
 		return nil, err
 	}
 
@@ -133,10 +180,7 @@ func (p *Parser) parseWhileStatement() (Ast.Statement, error) {
 		return nil, err
 	}
 
-	return &Ast.WhileStatement{
-		Condition: condition,
-		Body:      body,
-	}, nil
+	return &Ast.WhileStatement{Condition: condition, Body: body}, nil
 }
 
 func (p *Parser) parsePrintStatement() (Ast.Statement, error) {
@@ -145,11 +189,24 @@ func (p *Parser) parsePrintStatement() (Ast.Statement, error) {
 		return nil, err
 	}
 
-	if _, err := p.consume(Lexer.SEMICOLON, "Ожидается ';' после значения."); err != nil {
+	if _, err := p.consume(Lexer.SEMICOLON, "Expected ';' after value."); err != nil {
 		return nil, err
 	}
 
 	return &Ast.PrintStatement{Expr: value}, nil
+}
+
+func (p *Parser) parseReturnStatement() (Ast.Statement, error) {
+	value, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := p.consume(Lexer.SEMICOLON, "Expected ';' after return value."); err != nil {
+		return nil, err
+	}
+
+	return &Ast.ReturnStatement{Value: value}, nil
 }
 
 func (p *Parser) parseExpressionStatement() (Ast.Statement, error) {
@@ -158,7 +215,7 @@ func (p *Parser) parseExpressionStatement() (Ast.Statement, error) {
 		return nil, err
 	}
 
-	if _, err := p.consume(Lexer.SEMICOLON, "Ожидается ';' после выражения."); err != nil {
+	if _, err := p.consume(Lexer.SEMICOLON, "Expected ';' after expression."); err != nil {
 		return nil, err
 	}
 
@@ -166,28 +223,27 @@ func (p *Parser) parseExpressionStatement() (Ast.Statement, error) {
 }
 
 func (p *Parser) parseBlock() ([]Ast.Statement, error) {
-	stmts := make([]Ast.Statement, 0)
+	statements := make([]Ast.Statement, 0)
 
 	for !p.check(Lexer.RBRACE) && !p.isAtEnd() {
-		st, err := p.parseDeclaration()
+		statement, err := p.parseDeclaration()
 		if err != nil {
 			return nil, err
 		}
-		stmts = append(stmts, st)
+		statements = append(statements, statement)
 	}
 
-	if _, err := p.consume(Lexer.RBRACE, "Ожидается '}' после блока."); err != nil {
+	if _, err := p.consume(Lexer.RBRACE, "Expected '}' after block."); err != nil {
 		return nil, err
 	}
 
-	return stmts, nil
+	return statements, nil
 }
 
 func (p *Parser) parseExpression() (Ast.Expression, error) {
 	return p.parseAssignment()
 }
 
-// 1) Присваивание (самый низкий приоритет)
 func (p *Parser) parseAssignment() (Ast.Expression, error) {
 	expr, err := p.parseLogicalOr()
 	if err != nil {
@@ -197,22 +253,21 @@ func (p *Parser) parseAssignment() (Ast.Expression, error) {
 	if p.match(Lexer.EQ) {
 		equals := p.previous()
 
-		value, err := p.parseAssignment() // a = b = 5
+		value, err := p.parseAssignment()
 		if err != nil {
 			return nil, err
 		}
 
-		if v, ok := expr.(*Ast.VariableExpression); ok {
-			return &Ast.AssignExpression{Name: v.Name, Value: value}, nil
+		if variable, ok := expr.(*Ast.VariableExpression); ok {
+			return &Ast.AssignExpression{Name: variable.Name, Value: value}, nil
 		}
 
-		return nil, fmt.Errorf("[Parser Error] Line %d: Недопустимая цель для присваивания.", equals.Line)
+		return nil, fmt.Errorf("[Parser Error] Line %d: invalid assignment target", equals.Line)
 	}
 
 	return expr, nil
 }
 
-// 2) ||
 func (p *Parser) parseLogicalOr() (Ast.Expression, error) {
 	expr, err := p.parseLogicalAnd()
 	if err != nil {
@@ -220,18 +275,17 @@ func (p *Parser) parseLogicalOr() (Ast.Expression, error) {
 	}
 
 	for p.match(Lexer.OR) {
-		op := p.previous().Type
+		operator := p.previous().Type
 		right, err := p.parseLogicalAnd()
 		if err != nil {
 			return nil, err
 		}
-		expr = &Ast.BinaryExpression{Left: expr, Operator: op, Right: right}
+		expr = &Ast.BinaryExpression{Left: expr, Operator: operator, Right: right}
 	}
 
 	return expr, nil
 }
 
-// 3) &&
 func (p *Parser) parseLogicalAnd() (Ast.Expression, error) {
 	expr, err := p.parseEquality()
 	if err != nil {
@@ -239,18 +293,17 @@ func (p *Parser) parseLogicalAnd() (Ast.Expression, error) {
 	}
 
 	for p.match(Lexer.AND) {
-		op := p.previous().Type
+		operator := p.previous().Type
 		right, err := p.parseEquality()
 		if err != nil {
 			return nil, err
 		}
-		expr = &Ast.BinaryExpression{Left: expr, Operator: op, Right: right}
+		expr = &Ast.BinaryExpression{Left: expr, Operator: operator, Right: right}
 	}
 
 	return expr, nil
 }
 
-// 4) ==, !=
 func (p *Parser) parseEquality() (Ast.Expression, error) {
 	expr, err := p.parseComparison()
 	if err != nil {
@@ -258,18 +311,17 @@ func (p *Parser) parseEquality() (Ast.Expression, error) {
 	}
 
 	for p.match(Lexer.EQEQ, Lexer.NEQ) {
-		op := p.previous().Type
+		operator := p.previous().Type
 		right, err := p.parseComparison()
 		if err != nil {
 			return nil, err
 		}
-		expr = &Ast.BinaryExpression{Left: expr, Operator: op, Right: right}
+		expr = &Ast.BinaryExpression{Left: expr, Operator: operator, Right: right}
 	}
 
 	return expr, nil
 }
 
-// 5) <, >, <=, >=
 func (p *Parser) parseComparison() (Ast.Expression, error) {
 	expr, err := p.parseTerm()
 	if err != nil {
@@ -277,18 +329,17 @@ func (p *Parser) parseComparison() (Ast.Expression, error) {
 	}
 
 	for p.match(Lexer.LT, Lexer.LTEQ, Lexer.GT, Lexer.GTEQ) {
-		op := p.previous().Type
+		operator := p.previous().Type
 		right, err := p.parseTerm()
 		if err != nil {
 			return nil, err
 		}
-		expr = &Ast.BinaryExpression{Left: expr, Operator: op, Right: right}
+		expr = &Ast.BinaryExpression{Left: expr, Operator: operator, Right: right}
 	}
 
 	return expr, nil
 }
 
-// 6) +, -
 func (p *Parser) parseTerm() (Ast.Expression, error) {
 	expr, err := p.parseFactor()
 	if err != nil {
@@ -296,18 +347,17 @@ func (p *Parser) parseTerm() (Ast.Expression, error) {
 	}
 
 	for p.match(Lexer.PLUS, Lexer.MINUS) {
-		op := p.previous().Type
+		operator := p.previous().Type
 		right, err := p.parseFactor()
 		if err != nil {
 			return nil, err
 		}
-		expr = &Ast.BinaryExpression{Left: expr, Operator: op, Right: right}
+		expr = &Ast.BinaryExpression{Left: expr, Operator: operator, Right: right}
 	}
 
 	return expr, nil
 }
 
-// 7) *, /
 func (p *Parser) parseFactor() (Ast.Expression, error) {
 	expr, err := p.parseUnary()
 	if err != nil {
@@ -315,12 +365,12 @@ func (p *Parser) parseFactor() (Ast.Expression, error) {
 	}
 
 	for p.match(Lexer.STAR, Lexer.SLASH) {
-		op := p.previous().Type
+		operator := p.previous().Type
 		right, err := p.parseUnary()
 		if err != nil {
 			return nil, err
 		}
-		expr = &Ast.BinaryExpression{Left: expr, Operator: op, Right: right}
+		expr = &Ast.BinaryExpression{Left: expr, Operator: operator, Right: right}
 	}
 
 	return expr, nil
@@ -328,26 +378,61 @@ func (p *Parser) parseFactor() (Ast.Expression, error) {
 
 func (p *Parser) parseUnary() (Ast.Expression, error) {
 	if p.match(Lexer.EXCL, Lexer.MINUS) {
-		op := p.previous().Type
+		operator := p.previous().Type
 		right, err := p.parseUnary()
 		if err != nil {
 			return nil, err
 		}
-		return &Ast.UnaryExpression{Operator: op, Right: right}, nil
+		return &Ast.UnaryExpression{Operator: operator, Right: right}, nil
 	}
-	return p.parsePrimary()
+	return p.parseCall()
 }
 
-// 9) примитивы
+func (p *Parser) parseCall() (Ast.Expression, error) {
+	expr, err := p.parsePrimary()
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		if !p.match(Lexer.LPAREN) {
+			break
+		}
+
+		arguments := make([]Ast.Expression, 0)
+		if !p.check(Lexer.RPAREN) {
+			for {
+				argument, err := p.parseExpression()
+				if err != nil {
+					return nil, err
+				}
+				arguments = append(arguments, argument)
+
+				if !p.match(Lexer.COMMA) {
+					break
+				}
+			}
+		}
+
+		if _, err := p.consume(Lexer.RPAREN, "Expected ')' after arguments."); err != nil {
+			return nil, err
+		}
+
+		expr = &Ast.CallExpression{Callee: expr, Arguments: arguments}
+	}
+
+	return expr, nil
+}
+
 func (p *Parser) parsePrimary() (Ast.Expression, error) {
 	if p.match(Lexer.NUMBER) {
 		raw := p.previous().Value
-		val, err := strconv.ParseFloat(raw, 64)
+		value, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
-			tok := p.previous()
-			return nil, fmt.Errorf("[Parser Error] Line %d, Col %d: Некорректное число '%s'.", tok.Line, tok.Column, raw)
+			token := p.previous()
+			return nil, fmt.Errorf("[Parser Error] Line %d, Col %d: invalid number '%s'", token.Line, token.Column, raw)
 		}
-		return &Ast.NumberExpression{Value: val}, nil
+		return &Ast.NumberExpression{Value: value}, nil
 	}
 
 	if p.match(Lexer.STRING) {
@@ -367,21 +452,19 @@ func (p *Parser) parsePrimary() (Ast.Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, err := p.consume(Lexer.RPAREN, "Ожидается ')' после выражения."); err != nil {
+		if _, err := p.consume(Lexer.RPAREN, "Expected ')' after expression."); err != nil {
 			return nil, err
 		}
 		return expr, nil
 	}
 
-	tok := p.peek()
-	return nil, fmt.Errorf("[Parser Error] Line %d, Col %d: Ожидается выражение.", tok.Line, tok.Column)
+	token := p.peek()
+	return nil, fmt.Errorf("[Parser Error] Line %d, Col %d: expected expression", token.Line, token.Column)
 }
 
-// ----------------- helpers -----------------
-
 func (p *Parser) match(types ...Lexer.TokenType) bool {
-	for _, t := range types {
-		if p.check(t) {
+	for _, tokenType := range types {
+		if p.check(tokenType) {
 			p.advance()
 			return true
 		}
@@ -389,11 +472,11 @@ func (p *Parser) match(types ...Lexer.TokenType) bool {
 	return false
 }
 
-func (p *Parser) check(t Lexer.TokenType) bool {
+func (p *Parser) check(tokenType Lexer.TokenType) bool {
 	if p.isAtEnd() {
 		return false
 	}
-	return p.peek().Type == t
+	return p.peek().Type == tokenType
 }
 
 func (p *Parser) advance() Lexer.Token {
@@ -415,10 +498,10 @@ func (p *Parser) previous() Lexer.Token {
 	return p.tokens[p.position-1]
 }
 
-func (p *Parser) consume(t Lexer.TokenType, message string) (Lexer.Token, error) {
-	if p.check(t) {
+func (p *Parser) consume(tokenType Lexer.TokenType, message string) (Lexer.Token, error) {
+	if p.check(tokenType) {
 		return p.advance(), nil
 	}
-	tok := p.peek()
-	return Lexer.Token{}, fmt.Errorf("[Parser Error] Line %d, Col %d: %s", tok.Line, tok.Column, message)
+	token := p.peek()
+	return Lexer.Token{}, fmt.Errorf("[Parser Error] Line %d, Col %d: %s", token.Line, token.Column, message)
 }

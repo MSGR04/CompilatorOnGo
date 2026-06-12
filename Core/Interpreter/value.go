@@ -8,9 +8,11 @@ import (
 )
 
 type Value struct {
-	Type Semantic.ValueType
+	Type DataType
 	Data any
 }
+
+type DataType = Semantic.ValueType
 
 func NewNumberValue(value float64) Value {
 	return Value{Type: Semantic.NumberType, Data: value}
@@ -22,6 +24,10 @@ func NewStringValue(value string) Value {
 
 func NewBooleanValue(value bool) Value {
 	return Value{Type: Semantic.BooleanType, Data: value}
+}
+
+func NewFunctionValue(function Callable) Value {
+	return Value{Type: Semantic.FunctionType, Data: function}
 }
 
 func (v Value) Number() (float64, bool) {
@@ -37,6 +43,11 @@ func (v Value) StringValue() (string, bool) {
 func (v Value) Boolean() (bool, bool) {
 	boolean, ok := v.Data.(bool)
 	return boolean, ok && v.Type == Semantic.BooleanType
+}
+
+func (v Value) Callable() (Callable, bool) {
+	callable, ok := v.Data.(Callable)
+	return callable, ok && v.Type == Semantic.FunctionType
 }
 
 func (v Value) String() string {
@@ -56,6 +67,9 @@ func (v Value) String() string {
 			return "true"
 		}
 		return "false"
+	case Semantic.FunctionType:
+		callable, _ := v.Callable()
+		return callable.String()
 	default:
 		return "<invalid>"
 	}

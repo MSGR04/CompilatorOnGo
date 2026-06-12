@@ -28,6 +28,9 @@ func New(output io.Writer) *Interpreter {
 func (i *Interpreter) Interpret(statements []Ast.Statement) error {
 	for _, statement := range statements {
 		if err := i.execute(statement); err != nil {
+			if _, ok := err.(*returnSignal); ok {
+				return fmt.Errorf("runtime error: return is only allowed inside a function")
+			}
 			return err
 		}
 	}
@@ -46,7 +49,6 @@ func (i *Interpreter) execute(statement Ast.Statement) error {
 		if err != nil {
 			return err
 		}
-
 		_, err = fmt.Fprintln(i.output, value.String())
 		return err
 
@@ -61,6 +63,11 @@ func (i *Interpreter) execute(statement Ast.Statement) error {
 		}
 
 		i.environment.Define(s.Name, value)
+		return nil
+
+	case *Ast.FunctionStatement:
+		function := NewUserFunction(s, i.environment)
+		i.environment.Define(s.Name, NewFunctionValue(function))
 		return nil
 
 	case *Ast.BlockStatement:
@@ -80,11 +87,9 @@ func (i *Interpreter) execute(statement Ast.Statement) error {
 		if boolean {
 			return i.execute(s.ThenBranch)
 		}
-
 		if s.ElseBranch != nil {
 			return i.execute(s.ElseBranch)
 		}
-
 		return nil
 
 	case *Ast.WhileStatement:
@@ -98,7 +103,6 @@ func (i *Interpreter) execute(statement Ast.Statement) error {
 			if !ok {
 				return fmt.Errorf("runtime error: while condition must be Boolean")
 			}
-
 			if !boolean {
 				return nil
 			}
@@ -107,6 +111,13 @@ func (i *Interpreter) execute(statement Ast.Statement) error {
 				return err
 			}
 		}
+
+	case *Ast.ReturnStatement:
+		value, err := i.evaluate(s.Value)
+		if err != nil {
+			return err
+		}
+		return &returnSignal{value: value}
 
 	default:
 		return fmt.Errorf("runtime error: unsupported statement type %T", statement)
@@ -152,8 +163,33 @@ func (i *Interpreter) evaluate(expression Ast.Expression) (Value, error) {
 		if err := i.environment.Assign(e.Name, value); err != nil {
 			return Value{}, err
 		}
-
 		return value, nil
+
+	case *Ast.CallExpression:
+		callee, err := i.evaluate(e.Callee)
+		if err != nil {
+			return Value{}, err
+		}
+
+		callable, ok := callee.Callable()
+		if !ok {
+			return Value{}, fmt.Errorf("runtime error: attempted to call a non-function value")
+		}
+
+		arguments := make([]Value, 0, len(e.Arguments))
+		for _, argumentExpression := range e.Arguments {
+			argument, err := i.evaluate(argumentExpression)
+			if err != nil {
+				return Value{}, err
+			}
+			arguments = append(arguments, argument)
+		}
+
+		if len(arguments) != callable.Arity() {
+			return Value{}, fmt.Errorf("runtime error: function expects %d arguments, got %d", callable.Arity(), len(arguments))
+		}
+
+		return callable.Call(i, arguments)
 
 	case *Ast.UnaryExpression:
 		right, err := i.evaluate(e.Right)
@@ -192,7 +228,6 @@ func (i *Interpreter) evaluate(expression Ast.Expression) (Value, error) {
 			if !ok {
 				return Value{}, fmt.Errorf("runtime error: operator '||' expects Boolean operands")
 			}
-
 			if leftBoolean {
 				return NewBooleanValue(true), nil
 			}
@@ -206,7 +241,6 @@ func (i *Interpreter) evaluate(expression Ast.Expression) (Value, error) {
 			if !ok {
 				return Value{}, fmt.Errorf("runtime error: operator '||' expects Boolean operands")
 			}
-
 			return NewBooleanValue(rightBoolean), nil
 
 		case Lexer.AND:
@@ -219,7 +253,6 @@ func (i *Interpreter) evaluate(expression Ast.Expression) (Value, error) {
 			if !ok {
 				return Value{}, fmt.Errorf("runtime error: operator '&&' expects Boolean operands")
 			}
-
 			if !leftBoolean {
 				return NewBooleanValue(false), nil
 			}
@@ -233,7 +266,6 @@ func (i *Interpreter) evaluate(expression Ast.Expression) (Value, error) {
 			if !ok {
 				return Value{}, fmt.Errorf("runtime error: operator '&&' expects Boolean operands")
 			}
-
 			return NewBooleanValue(rightBoolean), nil
 		}
 
@@ -262,7 +294,6 @@ func (i *Interpreter) evaluate(expression Ast.Expression) (Value, error) {
 			if leftOk && rightOk {
 				return NewStringValue(leftString + rightString), nil
 			}
-
 			return Value{}, fmt.Errorf("runtime error: '+' expects Number+Number or String+String")
 
 		case Lexer.MINUS:
@@ -332,6 +363,5 @@ func valuesEqual(left Value, right Value) bool {
 	if left.Type != right.Type {
 		return false
 	}
-
 	return left.Data == right.Data
 }

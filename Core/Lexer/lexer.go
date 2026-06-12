@@ -25,13 +25,15 @@ type Lexer struct {
 }
 
 var keywords = map[string]TokenType{
-	"var":   VAR,
-	"print": PRINT,
-	"if":    IF,
-	"else":  ELSE,
-	"while": WHILE,
-	"true":  BOOLEAN,
-	"false": BOOLEAN,
+	"var":    VAR,
+	"func":   FUNC,
+	"return": RETURN,
+	"print":  PRINT,
+	"if":     IF,
+	"else":   ELSE,
+	"while":  WHILE,
+	"true":   BOOLEAN,
+	"false":  BOOLEAN,
 }
 
 var operators = map[string]TokenType{
@@ -53,6 +55,7 @@ var operators = map[string]TokenType{
 	")":  RPAREN,
 	"{":  LBRACE,
 	"}":  RBRACE,
+	",":  COMMA,
 	";":  SEMICOLON,
 }
 

@@ -8,6 +8,8 @@ const (
 	STRING
 	BOOLEAN
 	VAR
+	FUNC
+	RETURN
 
 	PRINT
 	IF
@@ -35,6 +37,7 @@ const (
 	RPAREN    // )
 	LBRACE    // {
 	RBRACE    // }
+	COMMA     // ,
 	SEMICOLON // ;
 
 	EOF

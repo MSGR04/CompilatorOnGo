@@ -12,22 +12,28 @@ import (
 
 func main() {
 	source := `
-var total = 1;
-var step = 2;
-var label = "factorial";
+func factorial(n) {
+    if (n <= 1) {
+        return 1;
+    }
 
-while (step <= 5) {
-    total = total * step;
-    print total;
-    step = step + 1;
-}	
-
-var ok = total == 120;
-print ok;
-
-if (ok && true) {
-    print label + " ok";
+    return n * factorial(n - 1);
 }
+
+func sumTo(limit) {
+    var current = 1;
+    var total = 0;
+
+    while (current <= limit) {
+        total = total + current;
+        current = current + 1;
+    }
+
+    return total;
+}
+
+print factorial(5);
+print sumTo(10);
 `
 
 	fmt.Println("Source program:")
@@ -56,13 +62,6 @@ if (ok && true) {
 			fmt.Printf("- %s\n", semanticErr)
 		}
 		return
-	}
-
-	if warns := analyzer.Warnings(); len(warns) > 0 {
-		fmt.Println("Semantic analysis warnings:")
-		for _, warning := range warns {
-			fmt.Printf("- %s\n", warning)
-		}
 	}
 
 	fmt.Println("Program output:")

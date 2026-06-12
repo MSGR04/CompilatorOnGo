@@ -8,9 +8,10 @@ import (
 )
 
 type SemanticAnalyzer struct {
-	environment *SemanticEnvironment
-	errors      []string
-	warnings    []string
+	environment     *SemanticEnvironment
+	errors          []string
+	warnings        []string
+	currentFunction *functionInfo
 }
 
 func NewSemanticAnalyzer() *SemanticAnalyzer {
@@ -27,7 +28,7 @@ func (a *SemanticAnalyzer) Analyze(statements []Ast.Statement) {
 	}
 
 	for _, name := range a.environment.CollectUnused() {
-		a.warnings = append(a.warnings, fmt.Sprintf("Variable '%s' is declared but never used.", name))
+		a.warnings = append(a.warnings, fmt.Sprintf("'%s' is declared but never used.", name))
 	}
 }
 
@@ -41,12 +42,49 @@ func (a *SemanticAnalyzer) VisitStatement(statement Ast.Statement) {
 			a.errors = append(a.errors, fmt.Sprintf("Variable '%s' must be initialized to infer its static type.", s.Name))
 		} else {
 			initializerType = a.VisitExpression(s.Initializer)
-			initialized = initializerType != UnknownType
+			initialized = true
 		}
 
 		if !a.environment.DefineVariable(s.Name, initializerType, initialized) {
-			a.errors = append(a.errors, fmt.Sprintf("Variable '%s' is already defined.", s.Name))
+			a.errors = append(a.errors, fmt.Sprintf("Name '%s' is already defined in this scope.", s.Name))
 		}
+
+	case *Ast.FunctionStatement:
+		function, ok := a.environment.DefineFunction(s.Name, len(s.Params))
+		if !ok {
+			a.errors = append(a.errors, fmt.Sprintf("Name '%s' is already defined in this scope.", s.Name))
+			return
+		}
+
+		previousEnvironment := a.environment
+		previousFunction := a.currentFunction
+
+		a.environment = NewSemanticEnvironment(previousEnvironment)
+		a.currentFunction = function
+
+		seenParams := make(map[string]struct{}, len(s.Params))
+		for _, param := range s.Params {
+			if _, exists := seenParams[param]; exists {
+				a.errors = append(a.errors, fmt.Sprintf("Function '%s' has duplicate parameter '%s'.", s.Name, param))
+				continue
+			}
+			seenParams[param] = struct{}{}
+
+			if !a.environment.DefineVariable(param, UnknownType, true) {
+				a.errors = append(a.errors, fmt.Sprintf("Parameter '%s' conflicts with another name in function '%s'.", param, s.Name))
+			}
+		}
+
+		for _, inner := range s.Body {
+			a.VisitStatement(inner)
+		}
+
+		for _, name := range a.environment.CollectUnused() {
+			a.warnings = append(a.warnings, fmt.Sprintf("'%s' is declared but never used.", name))
+		}
+
+		a.environment = previousEnvironment
+		a.currentFunction = previousFunction
 
 	case *Ast.PrintStatement:
 		a.VisitExpression(s.Expr)
@@ -63,7 +101,7 @@ func (a *SemanticAnalyzer) VisitStatement(statement Ast.Statement) {
 		}
 
 		for _, name := range a.environment.CollectUnused() {
-			a.warnings = append(a.warnings, fmt.Sprintf("Variable '%s' is declared but never used.", name))
+			a.warnings = append(a.warnings, fmt.Sprintf("'%s' is declared but never used.", name))
 		}
 
 		a.environment = previous
@@ -87,6 +125,19 @@ func (a *SemanticAnalyzer) VisitStatement(statement Ast.Statement) {
 
 		a.VisitStatement(s.Body)
 
+	case *Ast.ReturnStatement:
+		if a.currentFunction == nil {
+			a.errors = append(a.errors, "Return statement is only allowed inside a function.")
+			return
+		}
+
+		returnType := a.VisitExpression(s.Value)
+		if a.currentFunction.returnType == UnknownType {
+			a.currentFunction.returnType = returnType
+		} else if returnType != UnknownType && a.currentFunction.returnType != returnType {
+			a.errors = append(a.errors, fmt.Sprintf("Function returns inconsistent types: %s and %s.", a.currentFunction.returnType, returnType))
+		}
+
 	default:
 		a.errors = append(a.errors, fmt.Sprintf("Unsupported statement type: %T", statement))
 	}
@@ -104,24 +155,32 @@ func (a *SemanticAnalyzer) VisitExpression(expression Ast.Expression) ValueType 
 		return BooleanType
 
 	case *Ast.VariableExpression:
-		info, defined := a.environment.UseVariable(e.Name)
-		if !defined {
-			a.errors = append(a.errors, fmt.Sprintf("Variable '%s' is not defined.", e.Name))
+		kind, variable, function := a.environment.ResolveName(e.Name)
+		switch kind {
+		case symbolVariable:
+			variable.used = true
+			if !variable.initialized {
+				a.errors = append(a.errors, fmt.Sprintf("Variable '%s' is used before initialization.", e.Name))
+				return UnknownType
+			}
+			return variable.valueType
+		case symbolFunction:
+			function.used = true
+			return FunctionType
+		default:
+			a.errors = append(a.errors, fmt.Sprintf("Name '%s' is not defined.", e.Name))
 			return UnknownType
 		}
-
-		if !info.initialized {
-			a.errors = append(a.errors, fmt.Sprintf("Variable '%s' is used before initialization.", e.Name))
-			return UnknownType
-		}
-
-		return info.valueType
 
 	case *Ast.AssignExpression:
 		valueType := a.VisitExpression(e.Value)
-		info, defined := a.environment.ResolveVariable(e.Name)
-		if !defined {
+		kind, info, _ := a.environment.ResolveName(e.Name)
+		if kind == symbolMissing {
 			a.errors = append(a.errors, fmt.Sprintf("Variable '%s' is not defined.", e.Name))
+			return UnknownType
+		}
+		if kind == symbolFunction {
+			a.errors = append(a.errors, fmt.Sprintf("Cannot assign to function '%s'.", e.Name))
 			return UnknownType
 		}
 
@@ -132,8 +191,41 @@ func (a *SemanticAnalyzer) VisitExpression(expression Ast.Expression) ValueType 
 			return UnknownType
 		}
 
-		info.initialized = valueType != UnknownType
+		info.initialized = true
 		return info.valueType
+
+	case *Ast.CallExpression:
+		for _, argument := range e.Arguments {
+			a.VisitExpression(argument)
+		}
+
+		calleeName, ok := getCalledFunctionName(e.Callee)
+		if !ok {
+			calleeType := a.VisitExpression(e.Callee)
+			if calleeType != UnknownType && calleeType != FunctionType {
+				a.errors = append(a.errors, fmt.Sprintf("Attempted to call non-function value of type %s.", calleeType))
+			}
+			return UnknownType
+		}
+
+		kind, variable, function := a.environment.ResolveName(calleeName)
+		switch kind {
+		case symbolVariable:
+			variable.used = true
+			a.errors = append(a.errors, fmt.Sprintf("Attempted to call variable '%s' of type %s.", calleeName, variable.valueType))
+			return UnknownType
+		case symbolFunction:
+			function.used = true
+		default:
+			a.errors = append(a.errors, fmt.Sprintf("Function '%s' is not defined.", calleeName))
+			return UnknownType
+		}
+
+		if len(e.Arguments) != function.paramCount {
+			a.errors = append(a.errors, fmt.Sprintf("Function '%s' expects %d arguments, got %d.", calleeName, function.paramCount, len(e.Arguments)))
+		}
+
+		return function.returnType
 
 	case *Ast.BinaryExpression:
 		leftType := a.VisitExpression(e.Left)
@@ -225,6 +317,14 @@ func (a *SemanticAnalyzer) VisitExpression(expression Ast.Expression) ValueType 
 		a.errors = append(a.errors, fmt.Sprintf("Unsupported expression type: %T", expression))
 		return UnknownType
 	}
+}
+
+func getCalledFunctionName(expression Ast.Expression) (string, bool) {
+	variable, ok := expression.(*Ast.VariableExpression)
+	if !ok {
+		return "", false
+	}
+	return variable.Name, true
 }
 
 func (a *SemanticAnalyzer) Errors() []string {

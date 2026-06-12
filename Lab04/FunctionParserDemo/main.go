@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"CompilatorOnGo/Core/Interpreter"
 	"CompilatorOnGo/Core/Lexer"
 	"CompilatorOnGo/Core/Parser"
 	"CompilatorOnGo/Core/Semantic"
@@ -12,22 +11,16 @@ import (
 
 func main() {
 	source := `
-var total = 1;
-var step = 2;
-var label = "factorial";
-
-while (step <= 5) {
-    total = total * step;
-    print total;
-    step = step + 1;
-}	
-
-var ok = total == 120;
-print ok;
-
-if (ok && true) {
-    print label + " ok";
+func add(a, b) {
+    return a + b;
 }
+
+func twice(value) {
+    return add(value, value);
+}
+
+var result = twice(21);
+print result;
 `
 
 	fmt.Println("Source program:")
@@ -58,17 +51,12 @@ if (ok && true) {
 		return
 	}
 
-	if warns := analyzer.Warnings(); len(warns) > 0 {
+	if warnings := analyzer.Warnings(); len(warnings) > 0 {
 		fmt.Println("Semantic analysis warnings:")
-		for _, warning := range warns {
+		for _, warning := range warnings {
 			fmt.Printf("- %s\n", warning)
 		}
 	}
 
-	fmt.Println("Program output:")
-
-	interpreter := Interpreter.New(os.Stdout)
-	if err := interpreter.Interpret(statements); err != nil {
-		fmt.Fprintf(os.Stderr, "runtime error: %v\n", err)
-	}
+	fmt.Println("Function declarations and calls were parsed and checked successfully.")
 }
